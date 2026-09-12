@@ -1,0 +1,45 @@
+name: Generate Catholic Video
+
+on:
+  workflow_dispatch:
+    inputs:
+      episode:
+        description: '실행할 에피소드 JSON 파일 경로'
+        required: true
+        default: 'episodes/ep01_altar_kiss.json'
+
+jobs:
+  build-video:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: 파이썬 설정 (Python 3.10)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: FFmpeg 및 나눔 폰트 설치
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-nanum fonts-nanum-extra
+
+      - name: 파이썬 패키지 설치
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 타입캐스트 필재 음성 및 영상 생성
+        env:
+          TYPECAST_API_KEY: ${{ secrets.TYPECAST_API_KEY }}
+        run: |
+          python src/main.py --script "${{ github.event.inputs.episode }}" --output "output"
+
+      - name: 완성된 영상 파일 아티팩트 업로드 (다운로드 가능)
+        uses: actions/upload-artifact@v4
+        with:
+          name: catholic-video-output
+          path: output/*_final.mp4
+          retention-days: 7
