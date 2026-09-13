@@ -67,17 +67,32 @@ class VideoRenderer:
         else:
             zoom_expr = f"zoompan=z='1.1':x='iw/2-(iw/zoom/2)+on*0.5':y='ih/2-(ih/zoom/2)':d={total_frames}:s={self.width}x{self.height}:fps={self.fps}"
 
-        # 텍스트 줄바꿈 및 이스케이프 처리
-        clean_text = text.replace("'", "").replace(":", "\\:")
-        # 30자 단위로 줄바꿈
-        lines = [clean_text[i:i+28] for i in range(0, len(clean_text), 28)]
-        formatted_text = "\n".join(lines)
+        # 한글 폰트 경로 (다운로드된 NanumMyeongjo.ttf 우선 사용)
+        font_path = os.path.abspath("assets/fonts/NanumMyeongjo.ttf").replace("\\", "/")
+        if not os.path.exists(font_path):
+            font_path = "/usr/share/fonts/truetype/nanum/NanumMyeongjo.ttf"
 
+        # 텍스트 줄바꿈: 24자 내외로 1~2줄씩 깔끔하게 정돈
+        clean_text = text.replace("'", "").replace(":", "\\:")
+        words = clean_text.split()
+        lines = []
+        current = ""
+        for w in words:
+            if len(current + " " + w) <= 24:
+                current = (current + " " + w).strip()
+            else:
+                lines.append(current)
+                current = w
+        if current:
+            lines.append(current)
+        formatted_text = "\\\n".join(lines[:2]) # 최대 2줄 유지
+
+        # 신비한 건축사전 스타일의 정갈한 자막 바 (고급스러운 반투명 블랙 + 흰색 명조)
         drawtext_filter = (
-            f"drawtext=text='{formatted_text}':"
-            f"fontcolor=white:fontsize=48:line_spacing=20:"
-            f"box=1:boxcolor=black@0.55:boxborderw=25:"
-            f"x=(w-text_w)/2:y=h-text_h-100"
+            f"drawtext=fontfile='{font_path}':text='{formatted_text}':"
+            f"fontcolor=white:fontsize=44:line_spacing=18:"
+            f"box=1:boxcolor=black@0.65:boxborderw=20:"
+            f"x=(w-text_w)/2:y=h-text_h-90"
         )
 
         filter_complex = f"{zoom_expr},{drawtext_filter}"

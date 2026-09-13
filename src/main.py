@@ -39,12 +39,17 @@ def generate_episode(episode_json_path: str, output_dir: str = "output"):
         img_path = os.path.join(temp_dir, f"{ep_id}_scene_{s_id}.jpg")
         scene_mp4 = os.path.join(temp_dir, f"{ep_id}_scene_{s_id}.mp4")
 
-        # 1. 음성 합성 (Typecast 필재)
+        # 1. 음성 합성
         if not os.path.exists(audio_path):
             tts.synthesize(text, audio_path)
 
-        # 2. 이미지 다운로드 & 리사이즈
-        if not os.path.exists(img_path):
+        # 2. 이미지 준비 (로컬 엄선 에셋 우선 사용)
+        local_curated_img = f"assets/images/scene_{s_id}.jpg"
+        if os.path.exists(local_curated_img):
+            print(f"🖼️ [Asset] 검증된 고화질 로컬 성화 에셋 사용: {local_curated_img}")
+            import shutil
+            shutil.copyfile(local_curated_img, img_path)
+        elif not os.path.exists(img_path):
             renderer.download_image(img_url, img_path)
 
         # 3. 씬 비디오 렌더링

@@ -31,7 +31,11 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 타입캐스트 필재 음성 및 영상 생성
+      - name: 고품질 가톨릭 성화 및 한글 폰트 에셋 다운로드
+        run: |
+          python src/download_assets.py
+
+      - name: 영상 생성 (필재/다큐 낭독 + Ken Burns + 나눔명조 자막)
         env:
           TYPECAST_API_KEY: ${{ secrets.TYPECAST_API_KEY }}
         run: |
