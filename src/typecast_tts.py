@@ -10,11 +10,23 @@ class TypecastTTS:
     BASE_URL = "https://typecast.ai/api"
 
     def __init__(self, api_key: str = None):
-        self.api_key = api_key or os.getenv("TYPECAST_API_KEY")
+        self.api_key = api_key or os.getenv("TYPECAST_API_KEY", "").strip()
         if not self.api_key:
-            raise ValueError("TYPECAST_API_KEY가 설정되지 않았습니다.")
+            raise ValueError("TYPECAST_API_KEY가 비어 있습니다. GitHub Secrets를 확인해주세요.")
+        
+        # 앞 4자리, 뒤 4자리만 출력하여 키 전달 여부 확인
+        masked = f"{self.api_key[:4]}...{self.api_key[-4:]}" if len(self.api_key) > 8 else "***"
+        print(f"🔑 [Auth] TYPECAST_API_KEY 감지됨: {masked}")
+
+        # 타입캐스트는 토큰에 따라 Bearer prefix 유무 또는 api-key 헤더를 필요로 함
+        token = self.api_key
+        if not token.startswith("Bearer ") and not token.startswith("__plt"):
+            bearer_token = f"Bearer {token}"
+        else:
+            bearer_token = f"Bearer {token}"
+
         self.headers = {
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": bearer_token,
             "Content-Type": "application/json"
         }
 
@@ -35,15 +47,29 @@ class TypecastTTS:
         }
 
         print(f"🎙️ [Typecast TTS] 요청 중: {text[:30]}...")
-        # 1. 합성 요청 (Speak API)
+        
+        # 1. 합성 요청 (Bearer 헤더 시도)
         response = requests.post(f"{self.BASE_URL}/speak", headers=self.headers, json=payload)
         
+        # 401일 경우 Bearer 없이 직접 전달 시도
+        if response.status_code == 401:
+            print("⚠️ Bearer 인증 실패, Raw Token으로 재시도 중...")
+            alt_headers = {
+                "Authorization": self.api_key,
+                "Content-Type": "application/json"
+            }
+            alt_res = requests.post(f"{self.BASE_URL}/speak", headers=alt_headers, json=payload)
+            if alt_res.status_code == 200:
+                response = alt_res
+                self.headers = alt_headers
+            else:
+                # v1 speak 재시도
+                v1_res = requests.post("https://api.typecast.ai/v1/speak", headers=self.headers, json=payload)
+                if v1_res.status_code == 200:
+                    response = v1_res
+
         if response.status_code != 200:
-            # v1 엔드포인트 대체 시도
-            fallback_res = requests.post("https://api.typecast.ai/v1/speak", headers=self.headers, json=payload)
-            if fallback_res.status_code != 200:
-                raise RuntimeError(f"Typecast API 에러 ({response.status_code}): {response.text}")
-            response = fallback_res
+            raise RuntimeError(f"Typecast API 에러 ({response.status_code}): {response.text}")
 
         data = response.json()
         
