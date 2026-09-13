@@ -67,32 +67,50 @@ class VideoRenderer:
         else:
             zoom_expr = f"zoompan=z='1.1':x='iw/2-(iw/zoom/2)+on*0.5':y='ih/2-(ih/zoom/2)':d={total_frames}:s={self.width}x{self.height}:fps={self.fps}"
 
-        # 한글 폰트 경로 (다운로드된 NanumMyeongjo.ttf 우선 사용)
-        font_path = os.path.abspath("assets/fonts/NanumMyeongjo.ttf").replace("\\", "/")
-        if not os.path.exists(font_path):
-            font_path = "/usr/share/fonts/truetype/nanum/NanumMyeongjo.ttf"
-
-        # 텍스트 줄바꿈: 24자 내외로 1~2줄씩 깔끔하게 정돈
-        clean_text = text.replace("'", "").replace(":", "\\:")
+        # Linux(GitHub Actions) 및 Windows 환경 모두에서 완벽히 동작하는 폰트 경로 탐색
+        font_candidates = [
+            "assets/fonts/NanumMyeongjo.ttf",
+            "/usr/share/fonts/truetype/nanum/NanumMyeongjo.ttf",
+            "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"
+        ]
+        rel_font_path = "assets/fonts/NanumMyeongjo.ttf"
+        for fc in font_candidates:
+            if os.path.exists(fc):
+                rel_font_path = fc.replace("\\", "/")
+                break
+        
+        # 텍스트 줄바꿈: 22자 내외로 1~2줄씩 정돈 (신비한 건축사전 황금 비율)
+        clean_text = text.replace("'", "").replace('"', '')
         words = clean_text.split()
         lines = []
         current = ""
         for w in words:
-            if len(current + " " + w) <= 24:
+            if len(current + " " + w) <= 22:
                 current = (current + " " + w).strip()
             else:
                 lines.append(current)
                 current = w
         if current:
             lines.append(current)
-        formatted_text = "\\\n".join(lines[:2]) # 최대 2줄 유지
+        formatted_text = "\n".join(lines[:2])
 
-        # 신비한 건축사전 스타일의 정갈한 자막 바 (고급스러운 반투명 블랙 + 흰색 명조)
+        # 임시 텍스트 파일 저장 (상대경로로 전달)
+        text_filename = f"text_{os.path.basename(output_path)}.txt"
+        text_file_path = os.path.join(os.path.dirname(output_path), text_filename)
+        with open(text_file_path, "w", encoding="utf-8") as tf:
+            tf.write(formatted_text)
+        
+        rel_text_file = text_file_path.replace("\\", "/")
+
+        # 신비한 건축사전 스타일:
+        # 1. 플레이어 컨트롤러에 절대 가려지지 않도록 바닥에서 160px 위로 띄움 (y=h-text_h-160)
+        # 2. 글자 크기 38pt로 단정하고 고급스러운 비율
+        # 3. 반투명 딥 다크 박스(black@0.7) + 넉넉한 안쪽 여백(boxborderw=24)
         drawtext_filter = (
-            f"drawtext=fontfile='{font_path}':text='{formatted_text}':"
-            f"fontcolor=white:fontsize=44:line_spacing=18:"
-            f"box=1:boxcolor=black@0.65:boxborderw=20:"
-            f"x=(w-text_w)/2:y=h-text_h-90"
+            f"drawtext=fontfile='{rel_font_path}':textfile='{rel_text_file}':"
+            f"fontcolor=white:fontsize=38:line_spacing=16:"
+            f"box=1:boxcolor=black@0.70:boxborderw=24:"
+            f"x=(w-text_w)/2:y=h-text_h-160"
         )
 
         filter_complex = f"{zoom_expr},{drawtext_filter}"

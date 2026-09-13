@@ -56,20 +56,20 @@ class TypecastTTS:
             }
         }
 
-        print(f"🎙️ [타입캐스트 필재] 음성 생성 요청 중: {text[:30]}...")
+        print(f"🎙️ [타입캐스트 필재] 공식 SSFM-V30 모델로 음성 생성 요청 중 ({voice_id}): {text[:28]}...")
         
-        response = requests.post(f"{self.BASE_URL}/v1/text-to-speech", headers=self.headers, json=payload)
+        response = requests.post(f"{self.BASE_URL}/v1/text-to-speech", headers=self.headers, json=payload, timeout=30)
         
-        if response.status_code == 200:
+        if response.status_code == 200 and len(response.content) > 1000:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             with open(output_path, "wb") as f:
                 f.write(response.content)
-            print(f"✅ [타입캐스트 필재] 음성 저장 완료: {output_path}")
+            print(f"✅ [타입캐스트 필재] 고음질 음성 생성 완료: {output_path} ({len(response.content)} bytes)")
             return output_path
 
-        # 401/403 또는 기타 에러 시 상세 출력 및 백업 전환
-        print(f"⚠️ Typecast API 응답 상태 ({response.status_code}): {response.text}")
-        print("🎙️ 백업 다큐멘터리 해설 보이스(InJoon)로 음성을 합성합니다...")
+        # 401/403/400 등 에러 발생 시 명확히 출력
+        print(f"❌ [Typecast API 오류] 상태코드: {response.status_code}, 내용: {response.text}")
+        print("⚠️ 타입캐스트 생성 실패로 인해 예비 낭독 음성으로 전환합니다...")
         return self._synthesize_fallback(text, output_path)
 
     def _synthesize_fallback(self, text: str, output_path: str):
