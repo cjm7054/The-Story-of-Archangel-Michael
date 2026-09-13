@@ -35,8 +35,9 @@ jobs:
         run: |
           python src/download_assets.py
 
-      - name: 영상 생성 (필재/다큐 낭독 + Ken Burns + 나눔명조 자막)
+      - name: 영상 생성 (Google Flow 시네마틱 비주얼 + 타입캐스트 필재 + Ken Burns + 나눔명조 자막)
         env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TYPECAST_API_KEY: ${{ secrets.TYPECAST_API_KEY }}
         run: |
           python src/main.py --script "${{ github.event.inputs.episode }}" --output "output"
