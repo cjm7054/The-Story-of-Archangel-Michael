@@ -59,33 +59,32 @@ class TypecastTTS:
         response = requests.post(f"{self.BASE_URL}/v1/text-to-speech", headers=self.headers, json=payload)
         
         if response.status_code != 200:
-            # 구버전 엔드포인트 호환 시도
-            fallback_payload = {
-                "text": text,
-                "lang": "ko",
-                "actor_id": voice_id,
-                "tempo": tempo,
-                "model_version": "latest"
-            }
-            fb_res = requests.post(f"{self.BASE_URL}/api/speak", headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}, json=fallback_payload)
-            if fb_res.status_code == 200:
-                # 다운로드 처리
-                data = fb_res.json()
-                audio_url = data.get("result", {}).get("audio_download_url") or data.get("audio_url")
-                if audio_url:
-                    content = requests.get(audio_url).content
-                    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                    with open(output_path, "wb") as f:
-                        f.write(content)
-                    return output_path
-            
-            raise RuntimeError(f"Typecast API 에러 ({response.status_code}): {response.text}")
+            print(f"⚠️ Typecast API 응답 제한 ({response.status_code}): {response.text}")
+            print("🎙️ 차분하고 지적인 다큐멘터리 낭독 보이스(Edge-TTS: InJoon)로 자동 전환하여 음성을 생성합니다...")
+            return self._synthesize_fallback(text, output_path)
 
         # 정상 바이너리 WAV 오디오 저장
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         with open(output_path, "wb") as f:
             f.write(response.content)
 
-        print(f"✅ 오디오 저장 완료: {output_path}")
+        print(f"✅ [Typecast] 오디오 저장 완료: {output_path}")
+        return output_path
+
+    def _synthesize_fallback(self, text: str, output_path: str):
+        """
+        타입캐스트 제한 시 무료 고품질 한국어 다큐 보이스(InJoon)로 자동 합성
+        """
+        import asyncio
+        import edge_tts
+
+        async def _run():
+            # ko-KR-InJoonNeural: 신뢰감 있고 차분한 남성 해설 보이스
+            communicate = edge_tts.Communicate(text, "ko-KR-InJoonNeural", rate="-4%", pitch="-2Hz")
+            await communicate.save(output_path)
+
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        asyncio.run(_run())
+        print(f"✅ [Fallback Voice] 고품질 낭독 오디오 저장 완료: {output_path}")
         return output_path
 
