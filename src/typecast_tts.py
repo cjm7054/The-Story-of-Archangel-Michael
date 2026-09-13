@@ -7,101 +7,85 @@ class TypecastTTS:
     """
     Typecast API를 활용한 음성 생성 클라이언트
     """
-    BASE_URL = "https://typecast.ai/api"
+    BASE_URL = "https://api.typecast.ai"
 
     def __init__(self, api_key: str = None):
         self.api_key = api_key or os.getenv("TYPECAST_API_KEY", "").strip()
         if not self.api_key:
             raise ValueError("TYPECAST_API_KEY가 비어 있습니다. GitHub Secrets를 확인해주세요.")
         
-        # 앞 4자리, 뒤 4자리만 출력하여 키 전달 여부 확인
         masked = f"{self.api_key[:4]}...{self.api_key[-4:]}" if len(self.api_key) > 8 else "***"
         print(f"🔑 [Auth] TYPECAST_API_KEY 감지됨: {masked}")
 
-        # 타입캐스트는 토큰에 따라 Bearer prefix 유무 또는 api-key 헤더를 필요로 함
-        token = self.api_key
-        if not token.startswith("Bearer ") and not token.startswith("__plt"):
-            bearer_token = f"Bearer {token}"
-        else:
-            bearer_token = f"Bearer {token}"
-
         self.headers = {
-            "Authorization": bearer_token,
+            "X-API-KEY": self.api_key,
+            "User-Agent": "typecast-direct/1 python typecast-integration/1 (source=api-docs; generated_by=gemini-cli)",
             "Content-Type": "application/json"
         }
 
-    def synthesize(self, text: str, output_path: str, actor_id: str = "tc_61c0282465e94b8e88e14674", tempo: float = 0.95):
+    def get_piljae_voice_id(self) -> str:
         """
-        주어진 텍스트를 음성(wav/mp3)으로 생성하여 파일로 저장합니다.
-        필재 배우 또는 지정된 actor_id를 사용합니다.
+        /v3/voices 목록에서 '필재' 또는 'Piljae'의 정확한 voice_id를 검색
         """
+        try:
+            res = requests.get(f"{self.BASE_URL}/v3/voices?model=ssfm-v30", headers=self.headers, timeout=10)
+            if res.status_code == 200:
+                voices = res.json()
+                for v in voices:
+                    name = v.get("voice_name", "")
+                    if "필재" in name or "Piljae" in name or "piljae" in name:
+                        print(f"🎯 필재 보이스 ID 발견: {v.get('voice_id')} ({name})")
+                        return v.get("voice_id")
+        except Exception as e:
+            print(f"⚠️ 보이스 조회 경고: {e}")
+        return "tc_61c0282465e94b8e88e14674" # 기본 필재 ID
+
+    def synthesize(self, text: str, output_path: str, actor_id: str = None, tempo: float = 0.95):
+        """
+        공식 /v1/text-to-speech 엔드포인트로 바이너리 오디오 생성
+        """
+        voice_id = actor_id or self.get_piljae_voice_id()
         payload = {
+            "model": "ssfm-v30",
+            "voice_id": voice_id,
             "text": text,
-            "lang": "ko",
-            "actor_id": actor_id,
-            "tempo": tempo,
-            "volume": 100,
-            "pitch": 0,
-            "xapi_hd": True,
-            "model_version": "latest"
+            "output": {
+                "audio_format": "wav"
+            }
         }
 
-        print(f"🎙️ [Typecast TTS] 요청 중: {text[:30]}...")
+        print(f"🎙️ [Typecast SSFM-V30] 요청 중 ({voice_id}): {text[:30]}...")
         
-        # 1. 합성 요청 (Bearer 헤더 시도)
-        response = requests.post(f"{self.BASE_URL}/speak", headers=self.headers, json=payload)
+        response = requests.post(f"{self.BASE_URL}/v1/text-to-speech", headers=self.headers, json=payload)
         
-        # 401일 경우 Bearer 없이 직접 전달 시도
-        if response.status_code == 401:
-            print("⚠️ Bearer 인증 실패, Raw Token으로 재시도 중...")
-            alt_headers = {
-                "Authorization": self.api_key,
-                "Content-Type": "application/json"
-            }
-            alt_res = requests.post(f"{self.BASE_URL}/speak", headers=alt_headers, json=payload)
-            if alt_res.status_code == 200:
-                response = alt_res
-                self.headers = alt_headers
-            else:
-                # v1 speak 재시도
-                v1_res = requests.post("https://api.typecast.ai/v1/speak", headers=self.headers, json=payload)
-                if v1_res.status_code == 200:
-                    response = v1_res
-
         if response.status_code != 200:
+            # 구버전 엔드포인트 호환 시도
+            fallback_payload = {
+                "text": text,
+                "lang": "ko",
+                "actor_id": voice_id,
+                "tempo": tempo,
+                "model_version": "latest"
+            }
+            fb_res = requests.post(f"{self.BASE_URL}/api/speak", headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}, json=fallback_payload)
+            if fb_res.status_code == 200:
+                # 다운로드 처리
+                data = fb_res.json()
+                audio_url = data.get("result", {}).get("audio_download_url") or data.get("audio_url")
+                if audio_url:
+                    content = requests.get(audio_url).content
+                    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                    with open(output_path, "wb") as f:
+                        f.write(content)
+                    return output_path
+            
             raise RuntimeError(f"Typecast API 에러 ({response.status_code}): {response.text}")
 
-        data = response.json()
-        
-        # Polling 결과 확인 (대부분 speak_url 반환)
-        result = data.get("result", {})
-        audio_url = result.get("speak_v2_url") or result.get("audio_download_url") or data.get("audio_url")
-        
-        # 진행 중일 경우 polling
-        if not audio_url and "speak_url" in result:
-            poll_url = result["speak_url"]
-            print("⏳ 음성 생성 대기 중...")
-            for _ in range(30):
-                time.sleep(1.5)
-                poll_res = requests.get(poll_url, headers=self.headers)
-                if poll_res.status_code == 200:
-                    p_data = poll_res.json()
-                    p_result = p_data.get("result", {})
-                    status = p_result.get("status")
-                    if status == "done":
-                        audio_url = p_result.get("speak_v2_url") or p_result.get("audio_download_url")
-                        break
-                    elif status == "failed":
-                        raise RuntimeError(f"TTS 생성 실패: {p_data}")
-
-        if not audio_url:
-            raise RuntimeError(f"오디오 다운로드 URL을 받지 못했습니다: {data}")
-
-        # 2. 오디오 파일 다운로드
-        audio_res = requests.get(audio_url)
+        # 정상 바이너리 WAV 오디오 저장
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         with open(output_path, "wb") as f:
-            f.write(audio_res.content)
-        
+            f.write(response.content)
+
         print(f"✅ 오디오 저장 완료: {output_path}")
         return output_path
+
